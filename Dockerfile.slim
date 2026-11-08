@@ -87,6 +87,7 @@ RUN chmod 755 /rootfs/minimal-entrypoint.sh
 # No package manager, SSL command-line tools, or unrelated time zones.
 # Mihomo itself keeps its Go TLS implementation and the CA trust bundle.
 FROM scratch AS minimal
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 COPY --from=rootfs /rootfs/ /
 ENV DISABLE_NFTABLES=1 \
     CONFIG="default_config.yaml" \

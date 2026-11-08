@@ -21,12 +21,23 @@ jobs:
           - variant: baseline
             gvisor: '1'
             compact: '0'
+            target: runtime
           - variant: slim
             gvisor: '0'
             compact: '0'
+            target: runtime
           - variant: compact
             gvisor: '0'
             compact: '1'
+            target: runtime
+          - variant: minimal
+            gvisor: '0'
+            compact: '0'
+            target: minimal
+          - variant: minimal-compact
+            gvisor: '0'
+            compact: '1'
+            target: minimal
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,6 +48,7 @@ jobs:
         with:
           context: .
           file: Dockerfile.slim
+          target: ${{ matrix.target }}
           platforms: linux/arm64
           load: true
           tags: mihomo-test:${{ matrix.variant }}

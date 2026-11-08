@@ -8,6 +8,10 @@ No local router configuration, provider credentials or subscriptions belong here
 
 - `baseline`: gVisor enabled, normal Go inlining, for comparison.
 - `slim`: no `with_gvisor` tag; suitable for Linux TPROXY, not gVisor TUN.
+- `minimal`: slim with only BusyBox, tini, nftables, envsubst, required shared
+  libraries, CA trust and the Moscow timezone. No runtime package installation
+  or iptables/TUN fallback.
+- `minimal-compact`: minimal with disabled Go inlining.
 - `compact`: same as slim, with `-gcflags=all=-l`. This disables compiler
   inlining to reduce executable size without deleting protocols. Benchmark it
   before deployment: a smaller binary can cost forwarding performance.

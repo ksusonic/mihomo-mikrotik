@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build --mount=type=cache,target=/g
       -o /out/mihomo .
 
 # Same networking tools and base as the installed image; no runtime feature changes.
-FROM wiktorbgu/alpine-mikrotik:ip-nf-tables@sha256:ff6163af753fb6cd9e7d755590db9bba5d50ca6f59e84261a3ea43d4850827c2
+FROM wiktorbgu/alpine-mikrotik:ip-nf-tables@sha256:ff6163af753fb6cd9e7d755590db9bba5d50ca6f59e84261a3ea43d4850827c2 AS runtime
 RUN apk add --no-cache envsubst ca-certificates
 COPY --from=build /out/mihomo /usr/bin/mihomo
 COPY slim/entrypoint.sh /entrypoint.sh
@@ -77,3 +77,58 @@ LABEL org.opencontainers.image.source="https://github.com/ksusonic/mihomo-mikrot
       org.opencontainers.image.version="1.19.33" \
       org.opencontainers.image.description="ARM64 TPROXY build; pinned sources and compatibility patches"
 ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
+
+FROM runtime AS rootfs
+COPY slim/runtime-rootfs.sh /runtime-rootfs.sh
+RUN sh /runtime-rootfs.sh
+COPY slim/minimal-entrypoint.sh /rootfs/minimal-entrypoint.sh
+RUN chmod 755 /rootfs/minimal-entrypoint.sh
+
+# No package manager, SSL command-line tools, or unrelated time zones.
+# Mihomo itself keeps its Go TLS implementation and the CA trust bundle.
+FROM scratch AS minimal
+COPY --from=rootfs /rootfs/ /
+ENV DISABLE_NFTABLES=1 \
+    CONFIG="default_config.yaml" \
+    WORKDIR="/etc/mihomo" \
+    HEALTH_CHECK_ENABLE="true" \
+    HEALTH_CHECK_URL="https://www.gstatic.com/generate_204" \
+    HEALTH_CHECK_INTERVAL=300 \
+    HEALTH_CHECK_TIMEOUT=5000 \
+    HEALTH_CHECK_LAZY="true" \
+    HEALTH_CHECK_EXPECTED_STATUS=204 \
+    TOLERANCE=10 \
+    MIXED_PORT=1080 \
+    UI_PORT=9090 \
+    EXTERNAL_CONTROLLER_ADDRESS="0.0.0.0" \
+    TUN_STACK="mips" \
+    TUN_INET4_ADDRESS="198.19.0.1/30" \
+    TUN_INET6_ADDRESS="fdfe:dcba:9876::1/126" \
+    TUN_AUTO_REDIRECT="true" \
+    TUN_AUTO_DETECT_INTERFACE="true" \
+    TUN_AUTO_ROUTE="true" \
+    TUN_DISABLE_ICMP_FORWARDING="true" \
+    EXTERNAL_UI_PATH="ui" \
+    IPV6="true" \
+    IP_VERSION="dual" \
+    PROVIDER_INTERVAL=3600 \
+    DNS_ENABLE="true" \
+    DNS_USE_SYSTEM_HOSTS="true" \
+    DNS_CACHE_ALGORITHM="arc" \
+    DNS_PREFER_H3="false" \
+    DNS_LISTEN="0.0.0.0:53" \
+    DNS_ENHANCED_MODE="fake-ip" \
+    DNS_FAKE_IP_RANGE="198.18.0.0/15" \
+    DNS_FAKE_IP_TTL=1 \
+    TCP_CONCURRENT="true" \
+    KEEP_ALIVE_IDLE=60 \
+    KEEP_ALIVE_INTERVAL=30 \
+    FIND_PROCESS_MODE="off" \
+    STORE_SELECTED="true" \
+    UNIFIED_DELAY="true" \
+    LOADBALANCE_STRATEGY="consistent-hashing"
+
+LABEL org.opencontainers.image.source="https://github.com/ksusonic/mihomo-mikrotik" \
+      org.opencontainers.image.version="1.19.33" \
+      org.opencontainers.image.description="Minimal ARM64 nftables/TPROXY runtime"
+ENTRYPOINT ["/sbin/tini", "--", "/minimal-entrypoint.sh"]

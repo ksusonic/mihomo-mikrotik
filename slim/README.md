@@ -82,3 +82,11 @@ Prefer `minimal` if normal compiler inlining is required. `minimal-compact`
 retains the same protocols but trades inlining for approximately 4.2 MiB more
 space. These images do not implement runtime package installation or automatic
 upgrades; rebuild explicitly after upstream/security updates.
+
+## Lean feature build
+
+The manual workflow now builds `lean`: minimal-compact plus the upstream
+`no_easytier no_zerotier no_fake_tcp` tags. VLESS REALITY, TPROXY, UDP, DNS,
+sniffing and rule providers remain available. These disabled transports cannot
+be added later through configuration; rebuilding without LEAN_FEATURES restores
+them. Existing variants remain buildable through Dockerfile.slim arguments.

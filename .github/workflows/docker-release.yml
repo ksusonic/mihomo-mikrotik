@@ -18,26 +18,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - variant: baseline
-            gvisor: '1'
-            compact: '0'
-            target: runtime
-          - variant: slim
-            gvisor: '0'
-            compact: '0'
-            target: runtime
-          - variant: compact
-            gvisor: '0'
-            compact: '1'
-            target: runtime
-          - variant: minimal
-            gvisor: '0'
-            compact: '0'
-            target: minimal
-          - variant: minimal-compact
+          - variant: lean
             gvisor: '0'
             compact: '1'
             target: minimal
+            lean: '1'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,6 +40,7 @@ jobs:
           build-args: |
             WITH_GVISOR=${{ matrix.gvisor }}
             COMPACT=${{ matrix.compact }}
+            LEAN_FEATURES=${{ matrix.lean }}
           cache-from: type=gha,scope=arm64-${{ matrix.variant }}
           cache-to: type=gha,mode=max,scope=arm64-${{ matrix.variant }}
       - name: Validate binary and configuration
@@ -67,6 +53,9 @@ jobs:
           docker run --rm --network none --entrypoint /usr/bin/mihomo "mihomo-test:$VARIANT" -v | tee version.txt
           grep 'v1.19.33' version.txt
           grep 'go1.26.10' version.txt
+          grep no_easytier version.txt
+          grep no_zerotier version.txt
+          grep no_fake_tcp version.txt
           if [ "$VARIANT" != baseline ]; then ! grep -q with_gvisor version.txt; fi
           docker run --rm --network none -v "$PWD/slim/smoke.yaml:/smoke.yaml:ro" \
             --entrypoint /usr/bin/mihomo "mihomo-test:$VARIANT" -t -f /smoke.yaml -d /tmp

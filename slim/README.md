@@ -90,3 +90,13 @@ The manual workflow now builds `lean`: minimal-compact plus the upstream
 sniffing and rule providers remain available. These disabled transports cannot
 be added later through configuration; rebuilding without LEAN_FEATURES restores
 them. Existing variants remain buildable through Dockerfile.slim arguments.
+
+Measured lean build: 35,738,966 unpacked regular-file bytes; executable
+30,998,654 bytes. This saves another 12,124,160 bytes (11.56 MiB) versus
+minimal-compact. Build and runtime checks:
+https://github.com/ksusonic/mihomo-mikrotik/actions/runs/42478066021
+
+Private TPROXY deployment passed HTTPS, UDP STUN and blocked direct fallback.
+Actual router free flash increased from 42.2 to 53.8 MiB. Three VLESS downloads
+measured 3.71, 4.71 and 4.63 MB/s; no clear regression under variable network
+conditions.

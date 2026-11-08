@@ -59,3 +59,26 @@ proxy/API ports, blocked direct fallback, and automatic recovery from a paused
 process. Revert to the saved image if any check fails. Existing private mounted
 health/security scripts continue to apply. The only retained controller is the
 loopback health endpoint; no UI or public proxy is added by the slim build.
+
+## Measured v1.19.33 results
+
+Manual build: https://github.com/ksusonic/mihomo-mikrotik/actions/runs/42477233958
+
+| Variant | Unpacked regular file bytes | Executable bytes |
+| --- | ---: | ---: |
+| baseline | 69,802,294 | 57,278,590 |
+| slim | 60,037,430 | 47,513,726 |
+| compact | 55,646,518 | 43,122,814 |
+| minimal-compact | 47,863,126 | 43,122,814 |
+
+Minimal-compact saves 21,939,168 bytes (20.92 MiB) of unpacked files versus
+baseline. Filesystem metadata/allocation may differ on RouterOS. It passed
+configuration parsing, runtime tool checks, HTTP proxy smoke tests and local
+forwarding benchmarks. A private ARM64 TPROXY deployment additionally passed
+HTTPS and UDP STUN forwarding; three 5 MB VLESS downloads showed no observed
+throughput regression (network measurements are not controlled benchmarks).
+
+Prefer `minimal` if normal compiler inlining is required. `minimal-compact`
+retains the same protocols but trades inlining for approximately 4.2 MiB more
+space. These images do not implement runtime package installation or automatic
+upgrades; rebuild explicitly after upstream/security updates.

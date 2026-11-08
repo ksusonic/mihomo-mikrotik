@@ -100,3 +100,32 @@ Private TPROXY deployment passed HTTPS, UDP STUN and blocked direct fallback.
 Actual router free flash increased from 42.2 to 53.8 MiB. Three VLESS downloads
 measured 3.71, 4.71 and 4.63 MB/s; no clear regression under variable network
 conditions.
+
+## Experimental VLESS/TCP/REALITY + TPROXY profile
+
+`VLESS_ONLY=1` applies `restrict.go` to the immutable core source before building.
+The workflow currently builds this profile. Outbound parsing accepts only VLESS
+and the DIRECT/DNS/REJECT/rematch helpers needed by routing. VLESS requires TCP,
+TLS and a REALITY public key; WS, gRPC, XHTTP and other network modes fail explicitly.
+Configured inbound listeners accept only TPROXY, and legacy HTTP/SOCKS/mixed,
+TUN, Shadowsocks, VMess and TUIC settings are rejected. The matching legacy
+listener constructors are disabled. VLESS alternate transport branches and their
+client cleanup paths are removed before compilation so the linker can drop
+unreachable implementations. Shared TLS/DNS code and UDP/XUDP remain intact.
+
+DNS, sniffing, rule providers including community RULE-SET files, proxy groups,
+loopback health API and intentional DIRECT routing are preserved. No community
+list or routing policy is changed by installing this profile.
+
+Measured filesystem: 25,515,350 bytes; executable: 20,775,038 bytes.
+Previous lean filesystem: 35,738,966 bytes. Router free flash: 53.8 -> 63.8 MiB.
+Validated build (including restricted parser tests):
+https://github.com/ksusonic/mihomo-mikrotik/actions/runs/42479469019
+Private configuration parsing, transparent HTTPS, UDP STUN and missing-route
+blocking passed. Three repeated 5 MB downloads measured 3.54, 4.80 and 5.14 MB/s;
+one earlier transfer attempt timed out. These are variable-network observations,
+not a controlled throughput benchmark.
+
+This is a maintained core customization, not just upstream feature flags. Review
+and re-test the transformation and parser restrictions when changing the pinned
+Mihomo version. Deploy the saved lean archive to restore wider protocol support.

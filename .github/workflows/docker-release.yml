@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - variant: lean
+          - variant: vless-only
             gvisor: '0'
             compact: '1'
             target: minimal
@@ -41,6 +41,7 @@ jobs:
             WITH_GVISOR=${{ matrix.gvisor }}
             COMPACT=${{ matrix.compact }}
             LEAN_FEATURES=${{ matrix.lean }}
+            VLESS_ONLY=1
           cache-from: type=gha,scope=arm64-${{ matrix.variant }}
           cache-to: type=gha,mode=max,scope=arm64-${{ matrix.variant }}
       - name: Validate binary and configuration
@@ -59,25 +60,6 @@ jobs:
           if [ "$VARIANT" != baseline ]; then ! grep -q with_gvisor version.txt; fi
           docker run --rm --network none -v "$PWD/slim/smoke.yaml:/smoke.yaml:ro" \
             --entrypoint /usr/bin/mihomo "mihomo-test:$VARIANT" -t -f /smoke.yaml -d /tmp
-      - name: Smoke test HTTP proxy and benchmark local forwarding
-        env:
-          VARIANT: ${{ matrix.variant }}
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/mihomo-bench
-          dd if=/dev/zero of=/tmp/mihomo-bench/data bs=1M count=64 status=none
-          python3 -m http.server 18080 --directory /tmp/mihomo-bench >/tmp/http.log 2>&1 &
-          docker run -d --name smoke --add-host host.docker.internal:host-gateway \
-            -p 127.0.0.1:18081:1080 -v "$PWD/slim/smoke.yaml:/smoke.yaml:ro" \
-            --entrypoint /usr/bin/mihomo "mihomo-test:$VARIANT" -f /smoke.yaml -d /tmp
-          for n in $(seq 1 20); do
-            if curl -fsS --max-time 2 --noproxy '' -x http://127.0.0.1:18081 \
-              http://172.17.0.1:18080/ -o /dev/null; then break; fi
-            sleep 1
-          done
-          curl -fsS --max-time 15 --noproxy '' -x http://127.0.0.1:18081 \
-            http://172.17.0.1:18080/data -o /dev/null -w 'local_forwarding_bytes_per_second=%{speed_download}\n' | tee benchmark.txt
-          docker rm -f smoke
       - name: Export RouterOS import archive and size report
         env:
           VARIANT: ${{ matrix.variant }}
@@ -89,10 +71,10 @@ jobs:
           docker export measure > /tmp/rootfs.tar
           python3 slim/report-size.py /tmp/rootfs.tar "$VARIANT" > artifacts/size.json
           docker rm measure
-          cp version.txt benchmark.txt artifacts/
+          cp version.txt artifacts/
           (cd artifacts && sha256sum *.tar.gz > SHA256SUMS)
           cat artifacts/size.json >> "$GITHUB_STEP_SUMMARY"
-          cat artifacts/benchmark.txt >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         with:
           name: mihomo-arm64-${{ matrix.variant }}

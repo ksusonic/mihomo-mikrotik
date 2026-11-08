@@ -4,6 +4,7 @@ ARG TARGETARCH=arm64
 ARG WITH_GVISOR=0
 ARG COMPACT=0
 ARG LEAN_FEATURES=0
+ARG VLESS_ONLY=0
 ENV GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org GOPRIVATE="" GONOPROXY="" GONOSUMDB="" GOTOOLCHAIN=local
 RUN apk add --no-cache git patch
 WORKDIR /src
@@ -20,6 +21,8 @@ RUN git apply /patches/3326-04653b5.patch && \
     grep -q BuildAddedX25519MLKEM768HandshakeState component/tls/utls.go && \
     grep -Fq 'hello.SessionId[2] = 27' component/tls/reality.go && \
     grep -q 'skip invalid proxy' adapter/provider/provider.go
+COPY slim/restrict.go /restrict.go
+RUN if [ "$VLESS_ONLY" = 1 ]; then go run /restrict.go /src; fi
 RUN --mount=type=cache,target=/root/.cache/go-build --mount=type=cache,target=/go/pkg/mod \
     set -eu; tags=""; if [ "$WITH_GVISOR" = 1 ]; then tags=with_gvisor; fi; \
     if [ "$LEAN_FEATURES" = 1 ]; then tags="$tags no_easytier no_zerotier no_fake_tcp"; fi; \

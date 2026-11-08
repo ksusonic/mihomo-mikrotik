@@ -49,7 +49,7 @@ jobs:
         env:
           VARIANT: ${{ matrix.variant }}
         run: |
-          set -eu
+          set -euo pipefail
           docker run --rm --network none --entrypoint /usr/bin/mihomo "mihomo-test:$VARIANT" -v | tee version.txt
           grep 'v1.19.33' version.txt
           grep 'go1.26.10' version.txt
@@ -60,7 +60,7 @@ jobs:
         env:
           VARIANT: ${{ matrix.variant }}
         run: |
-          set -eu
+          set -euo pipefail
           mkdir -p /tmp/mihomo-bench
           dd if=/dev/zero of=/tmp/mihomo-bench/data bs=1M count=64 status=none
           python3 -m http.server 18080 --directory /tmp/mihomo-bench >/tmp/http.log 2>&1 &
@@ -69,17 +69,17 @@ jobs:
             --entrypoint /usr/bin/mihomo "mihomo-test:$VARIANT" -f /smoke.yaml -d /tmp
           for n in $(seq 1 20); do
             if curl -fsS --max-time 2 --noproxy '' -x http://127.0.0.1:18081 \
-              http://host.docker.internal:18080/ -o /dev/null; then break; fi
+              http://172.17.0.1:18080/ -o /dev/null; then break; fi
             sleep 1
           done
           curl -fsS --max-time 15 --noproxy '' -x http://127.0.0.1:18081 \
-            http://host.docker.internal:18080/data -o /dev/null -w 'local_forwarding_bytes_per_second=%{speed_download}\n' | tee benchmark.txt
+            http://172.17.0.1:18080/data -o /dev/null -w 'local_forwarding_bytes_per_second=%{speed_download}\n' | tee benchmark.txt
           docker rm -f smoke
       - name: Export RouterOS import archive and size report
         env:
           VARIANT: ${{ matrix.variant }}
         run: |
-          set -eu
+          set -euo pipefail
           mkdir artifacts
           docker save "mihomo-test:$VARIANT" | gzip -1 > "artifacts/mihomo-1.19.33-arm64-$VARIANT.tar.gz"
           docker create --name measure "mihomo-test:$VARIANT"

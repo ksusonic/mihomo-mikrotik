@@ -63,7 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm --network none --entrypoint /bin/sh "mihomo-test:$VARIANT" -c \
-            'nft --version && envsubst --version && tini --version && test -x /bin/grep && test -x /bin/ip'
+            'nft --version && envsubst --version && tini --version && test -x /bin/grep && command -v ip >/dev/null'
           docker run --rm --network none --entrypoint /usr/bin/mihomo "mihomo-test:$VARIANT" -v | tee version.txt
           grep 'v1.19.33' version.txt
           grep 'go1.26.10' version.txt

@@ -53,7 +53,7 @@ RUN sed -i \
   
 # Сборка mihomo для целевой архитектуры
 RUN echo "Building for $TARGETARCH $TARGETVARIANT" && \
-    BUILD_TAGS="" && [ "$WITH_GVISOR" = "1" ] && BUILD_TAGS="with_gvisor" && \
+    BUILD_TAGS="" && if [ "$WITH_GVISOR" = "1" ]; then BUILD_TAGS="with_gvisor"; fi && \
     echo "Build tags: $BUILD_TAGS" && \
     if [ "$TARGETARCH" = "arm" ]; then \
         export GOARCH=arm; \

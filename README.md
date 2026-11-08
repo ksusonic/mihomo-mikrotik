@@ -1,3 +1,7 @@
+## ARM64 slim fork
+
+See [slim build and deployment notes](slim/README.md). Builds are manual and do not auto-deploy.
+
 <p align="center">
 <img src="https://raw.githubusercontent.com/MetaCubeX/mihomo/Meta/docs/logo.png" width="120" alt="Mihomo Logo">
 </p>

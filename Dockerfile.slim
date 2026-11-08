@@ -1,0 +1,79 @@
+# syntax=docker/dockerfile:1
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine3.23@sha256:78e7f1e419545bc4b8b5ee8a40a99ddb5df1216d38681dbab2eeb1fdb2427f43 AS build
+ARG TARGETARCH=arm64
+ARG WITH_GVISOR=0
+ARG COMPACT=0
+ENV GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org GOPRIVATE="" GONOPROXY="" GONOSUMDB="" GOTOOLCHAIN=local
+RUN apk add --no-cache git patch
+WORKDIR /src
+RUN git init && git remote add origin https://github.com/MetaCubeX/mihomo.git && \
+    git fetch --depth=1 origin 3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8 && \
+    git checkout --detach FETCH_HEAD
+COPY slim/patches/ /patches/
+RUN git apply /patches/3326-04653b5.patch && \
+    sed -i '/^import (/a\    "github.com/metacubex/mihomo/log"' adapter/provider/provider.go && \
+    sed -i 's@return nil, fmt.Errorf("proxy %d error: %w", idx, err)@name, _ := mapping["name"].(string)\n                log.Warnln("[Provider %s] skip invalid proxy (idx=%d, name=%q): %v", pdName, idx, name, err)\n                continue@g' adapter/provider/provider.go && \
+    sed -i -e 's/hello\.SessionId\[0\] = 1/hello.SessionId[0] = 26/' \
+           -e 's/hello\.SessionId\[1\] = 8/hello.SessionId[1] = 3/' \
+           -e 's/hello\.SessionId\[2\] = 2/hello.SessionId[2] = 27/' component/tls/reality.go && \
+    grep -q BuildAddedX25519MLKEM768HandshakeState component/tls/utls.go && \
+    grep -Fq 'hello.SessionId[2] = 27' component/tls/reality.go && \
+    grep -q 'skip invalid proxy' adapter/provider/provider.go
+RUN --mount=type=cache,target=/root/.cache/go-build --mount=type=cache,target=/go/pkg/mod \
+    set -eu; tags=""; if [ "$WITH_GVISOR" = 1 ]; then tags=with_gvisor; fi; \
+    gcflags=""; if [ "$COMPACT" = 1 ]; then gcflags=all=-l; fi; \
+    CGO_ENABLED=0 GOOS=linux GOARCH="$TARGETARCH" go build -tags "$tags" -gcflags "$gcflags" -trimpath \
+      -ldflags '-w -s -buildid= -X github.com/metacubex/mihomo/constant.Version=v1.19.33 -X github.com/metacubex/mihomo/constant.BuildTime=2026-11-04T22:15:43Z' \
+      -o /out/mihomo .
+
+# Same networking tools and base as the installed image; no runtime feature changes.
+FROM wiktorbgu/alpine-mikrotik:ip-nf-tables@sha256:ff6163af753fb6cd9e7d755590db9bba5d50ca6f59e84261a3ea43d4850827c2
+RUN apk add --no-cache envsubst ca-certificates
+COPY --from=build /out/mihomo /usr/bin/mihomo
+COPY slim/entrypoint.sh /entrypoint.sh
+COPY mihomo-fs/ /
+ENV DISABLE_NFTABLES=1 \
+    CONFIG="default_config.yaml" \
+    WORKDIR="/etc/mihomo" \
+    HEALTH_CHECK_ENABLE="true" \
+    HEALTH_CHECK_URL="https://www.gstatic.com/generate_204" \
+    HEALTH_CHECK_INTERVAL=300 \
+    HEALTH_CHECK_TIMEOUT=5000 \
+    HEALTH_CHECK_LAZY="true" \
+    HEALTH_CHECK_EXPECTED_STATUS=204 \
+    TOLERANCE=10 \
+    MIXED_PORT=1080 \
+    UI_PORT=9090 \
+    EXTERNAL_CONTROLLER_ADDRESS="0.0.0.0" \
+    TUN_STACK="mips" \
+    TUN_INET4_ADDRESS="198.19.0.1/30" \
+    TUN_INET6_ADDRESS="fdfe:dcba:9876::1/126" \
+    TUN_AUTO_REDIRECT="true" \
+    TUN_AUTO_DETECT_INTERFACE="true" \
+    TUN_AUTO_ROUTE="true" \
+    TUN_DISABLE_ICMP_FORWARDING="true" \
+    EXTERNAL_UI_PATH="ui" \
+    IPV6="true" \
+    IP_VERSION="dual" \
+    PROVIDER_INTERVAL=3600 \
+    DNS_ENABLE="true" \
+    DNS_USE_SYSTEM_HOSTS="true" \
+    DNS_CACHE_ALGORITHM="arc" \
+    DNS_PREFER_H3="false" \
+    DNS_LISTEN="0.0.0.0:53" \
+    DNS_ENHANCED_MODE="fake-ip" \
+    DNS_FAKE_IP_RANGE="198.18.0.0/15" \
+    DNS_FAKE_IP_TTL=1 \
+    TCP_CONCURRENT="true" \
+    KEEP_ALIVE_IDLE=60 \
+    KEEP_ALIVE_INTERVAL=30 \
+    FIND_PROCESS_MODE="off" \
+    STORE_SELECTED="true" \
+    UNIFIED_DELAY="true" \
+    LOADBALANCE_STRATEGY="consistent-hashing"
+
+RUN chmod 755 /entrypoint.sh
+LABEL org.opencontainers.image.source="https://github.com/ksusonic/mihomo-mikrotik" \
+      org.opencontainers.image.version="1.19.33" \
+      org.opencontainers.image.description="ARM64 TPROXY build; pinned sources and compatibility patches"
+ENTRYPOINT ["tini", "--", "/entrypoint.sh"]

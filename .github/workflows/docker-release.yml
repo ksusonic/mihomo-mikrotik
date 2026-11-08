@@ -1,148 +1,97 @@
-
-name: Mihomo Docker Release
+name: ARM64 slim build
 
 on:
-  # Check for a new stable Mihomo release once a day
-  schedule:
-    - cron: "37 11 * * *"
-
-  # Manual build
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Mihomo release tag (empty = latest)"
-        required: false
-        type: string
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 concurrency:
-  group: mihomo-docker-release
+  group: arm64-slim-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
-    name: Build and publish Docker images
-    runs-on: ubuntu-latest
-
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: baseline
+            gvisor: '1'
+            compact: '0'
+          - variant: slim
+            gvisor: '0'
+            compact: '0'
+          - variant: compact
+            gvisor: '0'
+            compact: '1'
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          persist-credentials: true
-
-      - name: Resolve Mihomo version
-        id: version
-        env:
-          MANUAL_VERSION: ${{ inputs.version }}
-          EVENT_NAME: ${{ github.event_name }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ -n "$MANUAL_VERSION" ]; then
-            VERSION="${MANUAL_VERSION#refs/tags/}"
-          else
-            VERSION=$(curl -fsSL \
-              --retry 3 \
-              --retry-delay 2 \
-              https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
-              | grep -oP '"tag_name":\s*"\K[^"]+')
-          fi
-
-          if [ -z "$VERSION" ]; then
-            echo "ERROR: Unable to resolve Mihomo release"
-            exit 1
-          fi
-
-          PREVIOUS=$(sed -n 's/^mihomo=//p' .github/versions 2>/dev/null || true)
-
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] || \
-             [ "$VERSION" != "$PREVIOUS" ]; then
-            echo "build=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "build=false" >> "$GITHUB_OUTPUT"
-          fi
-
-          echo "Current Mihomo release: $VERSION"
-          echo "Previous Mihomo release: ${PREVIOUS:-none}"
-
-      - name: Skip unchanged release
-        if: steps.version.outputs.build == 'false'
-        run: echo "No new Mihomo release. Nothing to build."
-
-      - name: Set up QEMU
-        if: steps.version.outputs.build == 'true'
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Buildx
-        if: steps.version.outputs.build == 'true'
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GHCR
-        if: steps.version.outputs.build == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to Docker Hub
-        if: steps.version.outputs.build == 'true'
-        uses: docker/login-action@v3
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and publish
-        if: steps.version.outputs.build == 'true'
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - name: Build pinned ARM64 image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
-          platforms: |
-            linux/amd64
-            linux/arm64
-            linux/arm/v7
-            linux/arm/v5
+          file: Dockerfile.slim
+          platforms: linux/arm64
+          load: true
+          tags: mihomo-test:${{ matrix.variant }}
           build-args: |
-            MIHOMO_VERSION=${{ steps.version.outputs.version }}
-          push: true
-          tags: |
-            ghcr.io/wiktorbgu/mihomo-mikrotik:latest
-            ghcr.io/wiktorbgu/mihomo-mikrotik:${{ steps.version.outputs.version }}
-            docker.io/wiktorbgu/mihomo-mikrotik:latest
-            docker.io/wiktorbgu/mihomo-mikrotik:${{ steps.version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Save processed release
-        if: success() && steps.version.outputs.build == 'true'
+            WITH_GVISOR=${{ matrix.gvisor }}
+            COMPACT=${{ matrix.compact }}
+          cache-from: type=gha,scope=arm64-${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=arm64-${{ matrix.variant }}
+      - name: Validate binary and configuration
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VARIANT: ${{ matrix.variant }}
         run: |
-          set -euo pipefail
-
-          mkdir -p .github
-          touch .github/versions
-
-          if grep -q '^mihomo=' .github/versions; then
-            sed -i "s/^mihomo=.*/mihomo=$VERSION/" .github/versions
-          else
-            echo "mihomo=$VERSION" >> .github/versions
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add .github/versions
-
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: update Mihomo version to $VERSION"
-            git push
-          fi
+          set -eu
+          docker run --rm --network none --entrypoint /usr/bin/mihomo "mihomo-test:$VARIANT" -v | tee version.txt
+          grep 'v1.19.33' version.txt
+          grep 'go1.26.10' version.txt
+          if [ "$VARIANT" != baseline ]; then ! grep -q with_gvisor version.txt; fi
+          docker run --rm --network none -v "$PWD/slim/smoke.yaml:/smoke.yaml:ro" \
+            --entrypoint /usr/bin/mihomo "mihomo-test:$VARIANT" -t -f /smoke.yaml -d /tmp
+      - name: Smoke test HTTP proxy and benchmark local forwarding
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -eu
+          mkdir -p /tmp/mihomo-bench
+          dd if=/dev/zero of=/tmp/mihomo-bench/data bs=1M count=64 status=none
+          python3 -m http.server 18080 --directory /tmp/mihomo-bench >/tmp/http.log 2>&1 &
+          docker run -d --name smoke --add-host host.docker.internal:host-gateway \
+            -p 127.0.0.1:18081:1080 -v "$PWD/slim/smoke.yaml:/smoke.yaml:ro" \
+            --entrypoint /usr/bin/mihomo "mihomo-test:$VARIANT" -f /smoke.yaml -d /tmp
+          for n in $(seq 1 20); do
+            if curl -fsS --max-time 2 --noproxy '' -x http://127.0.0.1:18081 \
+              http://host.docker.internal:18080/ -o /dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS --max-time 15 --noproxy '' -x http://127.0.0.1:18081 \
+            http://host.docker.internal:18080/data -o /dev/null -w 'local_forwarding_bytes_per_second=%{speed_download}\n' | tee benchmark.txt
+          docker rm -f smoke
+      - name: Export RouterOS import archive and size report
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -eu
+          mkdir artifacts
+          docker save "mihomo-test:$VARIANT" | gzip -1 > "artifacts/mihomo-1.19.33-arm64-$VARIANT.tar.gz"
+          docker create --name measure "mihomo-test:$VARIANT"
+          docker export measure > /tmp/rootfs.tar
+          python3 slim/report-size.py /tmp/rootfs.tar "$VARIANT" > artifacts/size.json
+          docker rm measure
+          cp version.txt benchmark.txt artifacts/
+          (cd artifacts && sha256sum *.tar.gz > SHA256SUMS)
+          cat artifacts/size.json >> "$GITHUB_STEP_SUMMARY"
+          cat artifacts/benchmark.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mihomo-arm64-${{ matrix.variant }}
+          path: artifacts/
+          retention-days: 30
